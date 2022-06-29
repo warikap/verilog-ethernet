@@ -38,7 +38,7 @@ module axis_srl_register #
     // Propagate tkeep signal
     parameter KEEP_ENABLE = (DATA_WIDTH>8),
     // tkeep signal width (words per cycle)
-    parameter KEEP_WIDTH = (DATA_WIDTH/8),
+    parameter KEEP_WIDTH = ((DATA_WIDTH+7)/8),
     // Propagate tlast signal
     parameter LAST_ENABLE = 1,
     // Propagate tid signal
@@ -129,27 +129,27 @@ initial begin
 end
 
 always @(posedge clk) begin
+    // transfer empty to full
+    full_reg <= !m_axis_tready && m_axis_tvalid;
+
+    // transfer in if not full
+    if (s_axis_tready) begin
+        data_reg[0] <= s_axis;
+        valid_reg[0] <= s_axis_tvalid;
+        for (i = 0; i < 1; i = i + 1) begin
+            data_reg[i+1] <= data_reg[i];
+            valid_reg[i+1] <= valid_reg[i];
+        end
+        ptr_reg <= valid_reg[0];
+    end
+
+    if (m_axis_tready) begin
+        ptr_reg <= 0;
+    end
+
     if (rst) begin
         ptr_reg <= 0;
         full_reg <= 0;
-    end else begin
-        // transfer empty to full
-        full_reg <= !m_axis_tready && m_axis_tvalid;
-
-        // transfer in if not full
-        if (s_axis_tready) begin
-            data_reg[0] <= s_axis;
-            valid_reg[0] <= s_axis_tvalid;
-            for (i = 0; i < 1; i = i + 1) begin
-                data_reg[i+1] <= data_reg[i];
-                valid_reg[i+1] <= valid_reg[i];
-            end
-            ptr_reg <= valid_reg[0];
-        end
-
-        if (m_axis_tready) begin
-            ptr_reg <= 0;
-        end
     end
 end
 

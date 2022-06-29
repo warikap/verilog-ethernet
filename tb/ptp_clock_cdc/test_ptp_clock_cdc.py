@@ -73,12 +73,12 @@ class TB:
         self.dut.output_rst.setimmediatevalue(0)
         await RisingEdge(self.dut.input_clk)
         await RisingEdge(self.dut.input_clk)
-        self.dut.input_rst <= 1
-        self.dut.output_rst <= 1
+        self.dut.input_rst.value = 1
+        self.dut.output_rst.value = 1
         for k in range(10):
             await RisingEdge(self.dut.input_clk)
-        self.dut.input_rst <= 0
-        self.dut.output_rst <= 0
+        self.dut.input_rst.value = 0
+        self.dut.output_rst.value = 0
         for k in range(10):
             await RisingEdge(self.dut.input_clk)
 
@@ -94,9 +94,9 @@ class TB:
 
         while True:
             await t
-            self.dut.output_clk <= 1
+            self.dut.output_clk.value = 1
             await t
-            self.dut.output_clk <= 0
+            self.dut.output_clk.value = 0
 
     def get_input_ts_ns(self):
         ts = self.dut.input_ts.value.integer
@@ -247,6 +247,7 @@ def test_ptp_clock_cdc(request, ts_width, sample_clock):
     parameters['FNS_WIDTH'] = 16
     parameters['USE_SAMPLE_CLOCK'] = sample_clock
     parameters['LOG_RATE'] = 3
+    parameters['PIPELINE_OUTPUT'] = 0
 
     extra_env = {f'PARAM_{k}': str(v) for k, v in parameters.items()}
 

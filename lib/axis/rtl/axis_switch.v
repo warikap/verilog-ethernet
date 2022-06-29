@@ -42,7 +42,7 @@ module axis_switch #
     // Propagate tkeep signal
     parameter KEEP_ENABLE = (DATA_WIDTH>8),
     // tkeep signal width (words per cycle)
-    parameter KEEP_WIDTH = (DATA_WIDTH/8),
+    parameter KEEP_WIDTH = ((DATA_WIDTH+7)/8),
     // Propagate tid signal
     parameter ID_ENABLE = 0,
     // input tid signal width
@@ -258,14 +258,13 @@ generate
         end
 
         always @(posedge clk) begin
-            if (rst) begin
-                select_valid_reg <= 1'b0;
-            end else begin
-                select_valid_reg <= select_valid_next;
-            end
-
             select_reg <= select_next;
             drop_reg <= drop_next;
+            select_valid_reg <= select_valid_next;
+
+            if (rst) begin
+                select_valid_reg <= 1'b0;
+            end
         end
 
         // forwarding
