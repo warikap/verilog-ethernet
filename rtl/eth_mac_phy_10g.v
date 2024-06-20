@@ -39,16 +39,14 @@ module eth_mac_phy_10g #
     parameter ENABLE_PADDING = 1,
     parameter ENABLE_DIC = 1,
     parameter MIN_FRAME_LENGTH = 64,
-    parameter PTP_PERIOD_NS = 4'h6,
-    parameter PTP_PERIOD_FNS = 16'h6666,
-    parameter TX_PTP_TS_ENABLE = 0,
-    parameter TX_PTP_TS_WIDTH = 96,
-    parameter TX_PTP_TAG_ENABLE = TX_PTP_TS_ENABLE,
+    parameter PTP_TS_ENABLE = 0,
+    parameter PTP_TS_FMT_TOD = 1,
+    parameter PTP_TS_WIDTH = PTP_TS_FMT_TOD ? 96 : 64,
+    parameter TX_PTP_TS_CTRL_IN_TUSER = 0,
+    parameter TX_PTP_TAG_ENABLE = PTP_TS_ENABLE,
     parameter TX_PTP_TAG_WIDTH = 16,
-    parameter RX_PTP_TS_ENABLE = 0,
-    parameter RX_PTP_TS_WIDTH = 96,
-    parameter TX_USER_WIDTH = (TX_PTP_TAG_ENABLE ? TX_PTP_TAG_WIDTH : 0) + 1,
-    parameter RX_USER_WIDTH = (RX_PTP_TS_ENABLE ? RX_PTP_TS_WIDTH : 0) + 1,
+    parameter TX_USER_WIDTH = (PTP_TS_ENABLE ? (TX_PTP_TAG_ENABLE ? TX_PTP_TAG_WIDTH : 0) + (TX_PTP_TS_CTRL_IN_TUSER ? 1 : 0) : 0) + 1,
+    parameter RX_USER_WIDTH = (PTP_TS_ENABLE ? PTP_TS_WIDTH : 0) + 1,
     parameter BIT_REVERSE = 0,
     parameter SCRAMBLER_DISABLE = 0,
     parameter PRBS31_ENABLE = 0,
@@ -91,13 +89,14 @@ module eth_mac_phy_10g #
     input  wire [DATA_WIDTH-1:0]        serdes_rx_data,
     input  wire [HDR_WIDTH-1:0]         serdes_rx_hdr,
     output wire                         serdes_rx_bitslip,
+    output wire                         serdes_rx_reset_req,
 
     /*
      * PTP
      */
-    input  wire [TX_PTP_TS_WIDTH-1:0]   tx_ptp_ts,
-    input  wire [RX_PTP_TS_WIDTH-1:0]   rx_ptp_ts,
-    output wire [TX_PTP_TS_WIDTH-1:0]   tx_axis_ptp_ts,
+    input  wire [PTP_TS_WIDTH-1:0]      tx_ptp_ts,
+    input  wire [PTP_TS_WIDTH-1:0]      rx_ptp_ts,
+    output wire [PTP_TS_WIDTH-1:0]      tx_axis_ptp_ts,
     output wire [TX_PTP_TAG_WIDTH-1:0]  tx_axis_ptp_ts_tag,
     output wire                         tx_axis_ptp_ts_valid,
 
@@ -118,19 +117,20 @@ module eth_mac_phy_10g #
     /*
      * Configuration
      */
-    input  wire [7:0]                   ifg_delay,
-    input  wire                         tx_prbs31_enable,
-    input  wire                         rx_prbs31_enable
+    input  wire [7:0]                   cfg_ifg,
+    input  wire                         cfg_tx_enable,
+    input  wire                         cfg_rx_enable,
+    input  wire                         cfg_tx_prbs31_enable,
+    input  wire                         cfg_rx_prbs31_enable
 );
 
 eth_mac_phy_10g_rx #(
     .DATA_WIDTH(DATA_WIDTH),
     .KEEP_WIDTH(KEEP_WIDTH),
     .HDR_WIDTH(HDR_WIDTH),
-    .PTP_PERIOD_NS(PTP_PERIOD_NS),
-    .PTP_PERIOD_FNS(PTP_PERIOD_FNS),
-    .PTP_TS_ENABLE(RX_PTP_TS_ENABLE),
-    .PTP_TS_WIDTH(RX_PTP_TS_WIDTH),
+    .PTP_TS_ENABLE(PTP_TS_ENABLE),
+    .PTP_TS_FMT_TOD(PTP_TS_FMT_TOD),
+    .PTP_TS_WIDTH(PTP_TS_WIDTH),
     .USER_WIDTH(RX_USER_WIDTH),
     .BIT_REVERSE(BIT_REVERSE),
     .SCRAMBLER_DISABLE(SCRAMBLER_DISABLE),
@@ -151,6 +151,7 @@ eth_mac_phy_10g_rx_inst (
     .serdes_rx_data(serdes_rx_data),
     .serdes_rx_hdr(serdes_rx_hdr),
     .serdes_rx_bitslip(serdes_rx_bitslip),
+    .serdes_rx_reset_req(serdes_rx_reset_req),
     .ptp_ts(rx_ptp_ts),
     .rx_start_packet(rx_start_packet),
     .rx_error_count(rx_error_count),
@@ -160,7 +161,8 @@ eth_mac_phy_10g_rx_inst (
     .rx_block_lock(rx_block_lock),
     .rx_high_ber(rx_high_ber),
     .rx_status(rx_status),
-    .rx_prbs31_enable(rx_prbs31_enable)
+    .cfg_rx_enable(cfg_rx_enable),
+    .cfg_rx_prbs31_enable(cfg_rx_prbs31_enable)
 );
 
 eth_mac_phy_10g_tx #(
@@ -170,10 +172,10 @@ eth_mac_phy_10g_tx #(
     .ENABLE_PADDING(ENABLE_PADDING),
     .ENABLE_DIC(ENABLE_DIC),
     .MIN_FRAME_LENGTH(MIN_FRAME_LENGTH),
-    .PTP_PERIOD_NS(PTP_PERIOD_NS),
-    .PTP_PERIOD_FNS(PTP_PERIOD_FNS),
-    .PTP_TS_ENABLE(TX_PTP_TS_ENABLE),
-    .PTP_TS_WIDTH(TX_PTP_TS_WIDTH),
+    .PTP_TS_ENABLE(PTP_TS_ENABLE),
+    .PTP_TS_FMT_TOD(PTP_TS_FMT_TOD),
+    .PTP_TS_WIDTH(PTP_TS_WIDTH),
+    .PTP_TS_CTRL_IN_TUSER(TX_PTP_TS_CTRL_IN_TUSER),
     .PTP_TAG_ENABLE(TX_PTP_TAG_ENABLE),
     .PTP_TAG_WIDTH(TX_PTP_TAG_WIDTH),
     .USER_WIDTH(TX_USER_WIDTH),
@@ -199,8 +201,9 @@ eth_mac_phy_10g_tx_inst (
     .m_axis_ptp_ts_valid(tx_axis_ptp_ts_valid),
     .tx_start_packet(tx_start_packet),
     .tx_error_underflow(tx_error_underflow),
-    .ifg_delay(ifg_delay),
-    .tx_prbs31_enable(tx_prbs31_enable)
+    .cfg_ifg(cfg_ifg),
+    .cfg_tx_enable(cfg_tx_enable),
+    .cfg_tx_prbs31_enable(cfg_tx_prbs31_enable)
 );
 
 endmodule

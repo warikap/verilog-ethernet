@@ -38,7 +38,7 @@ from cocotb.utils import get_time_from_sim_steps
 from cocotb.regression import TestFactory
 
 from cocotbext.eth import XgmiiFrame, PtpClockSimTime
-from cocotbext.axi import AxiStreamBus, AxiStreamSource, AxiStreamSink
+from cocotbext.axi import AxiStreamBus, AxiStreamSource, AxiStreamSink, AxiStreamFrame
 from cocotbext.axi.stream import define_stream
 
 try:
@@ -79,12 +79,15 @@ class TB:
         self.axis_source = AxiStreamSource(AxiStreamBus.from_prefix(dut, "tx_axis"), dut.tx_clk, dut.tx_rst)
         self.axis_sink = AxiStreamSink(AxiStreamBus.from_prefix(dut, "rx_axis"), dut.rx_clk, dut.rx_rst)
 
-        self.rx_ptp_clock = PtpClockSimTime(ts_64=dut.rx_ptp_ts, clock=dut.rx_clk)
-        self.tx_ptp_clock = PtpClockSimTime(ts_64=dut.tx_ptp_ts, clock=dut.tx_clk)
+        self.rx_ptp_clock = PtpClockSimTime(ts_tod=dut.rx_ptp_ts, clock=dut.rx_clk)
+        self.tx_ptp_clock = PtpClockSimTime(ts_tod=dut.tx_ptp_ts, clock=dut.tx_clk)
         self.tx_ptp_ts_sink = PtpTsSink(PtpTsBus.from_prefix(dut, "tx_axis_ptp"), dut.tx_clk, dut.tx_rst)
 
-        dut.tx_prbs31_enable.setimmediatevalue(0)
-        dut.rx_prbs31_enable.setimmediatevalue(0)
+        dut.cfg_ifg.setimmediatevalue(0)
+        dut.cfg_tx_enable.setimmediatevalue(0)
+        dut.cfg_rx_enable.setimmediatevalue(0)
+        dut.cfg_tx_prbs31_enable.setimmediatevalue(0)
+        dut.cfg_rx_prbs31_enable.setimmediatevalue(0)
 
     async def reset(self):
         self.dut.rx_rst.setimmediatevalue(0)
@@ -106,7 +109,8 @@ async def run_test_rx(dut, payload_lengths=None, payload_data=None, ifg=12):
     tb = TB(dut)
 
     tb.serdes_source.ifg = ifg
-    tb.dut.ifg_delay.value = ifg
+    tb.dut.cfg_ifg.value = ifg
+    tb.dut.cfg_rx_enable.value = 1
 
     await tb.reset()
 
@@ -142,6 +146,7 @@ async def run_test_rx(dut, payload_lengths=None, payload_data=None, ifg=12):
 
         tb.log.info("RX frame PTP TS: %f ns", ptp_ts_ns)
         tb.log.info("TX frame SFD sim time: %f ns", tx_frame_sfd_ns)
+        tb.log.info("Difference: %f ns", abs(ptp_ts_ns - tx_frame_sfd_ns))
 
         assert rx_frame.tdata == test_data
         assert frame_error == 0
@@ -158,14 +163,15 @@ async def run_test_tx(dut, payload_lengths=None, payload_data=None, ifg=12):
     tb = TB(dut)
 
     tb.serdes_source.ifg = ifg
-    tb.dut.ifg_delay.value = ifg
+    tb.dut.cfg_ifg.value = ifg
+    tb.dut.cfg_tx_enable.value = 1
 
     await tb.reset()
 
     test_frames = [payload_data(x) for x in payload_lengths()]
 
     for test_data in test_frames:
-        await tb.axis_source.send(test_data)
+        await tb.axis_source.send(AxiStreamFrame(test_data, tuser=2))
 
     for test_data in test_frames:
         rx_frame = await tb.serdes_sink.recv()
@@ -181,6 +187,7 @@ async def run_test_tx(dut, payload_lengths=None, payload_data=None, ifg=12):
 
         tb.log.info("TX frame PTP TS: %f ns", ptp_ts_ns)
         tb.log.info("RX frame SFD sim time: %f ns", rx_frame_sfd_ns)
+        tb.log.info("Difference: %f ns", abs(rx_frame_sfd_ns - ptp_ts_ns))
 
         assert rx_frame.get_payload() == test_data
         assert rx_frame.check_fcs()
@@ -202,24 +209,42 @@ async def run_test_tx_alignment(dut, payload_data=None, ifg=12):
     byte_width = tb.axis_source.width // 8
 
     tb.serdes_source.ifg = ifg
-    tb.dut.ifg_delay.value = ifg
+    tb.dut.cfg_ifg.value = ifg
+    tb.dut.cfg_tx_enable.value = 1
+
+    await tb.reset()
 
     for length in range(60, 92):
 
-        await tb.reset()
+        for k in range(10):
+            await RisingEdge(dut.tx_clk)
 
         test_frames = [payload_data(length) for k in range(10)]
         start_lane = []
 
         for test_data in test_frames:
-            await tb.axis_source.send(test_data)
+            await tb.axis_source.send(AxiStreamFrame(test_data, tuser=2))
 
         for test_data in test_frames:
             rx_frame = await tb.serdes_sink.recv()
+            ptp_ts = await tb.tx_ptp_ts_sink.recv()
+
+            ptp_ts_ns = int(ptp_ts.ts) / 2**16
+
+            rx_frame_sfd_ns = get_time_from_sim_steps(rx_frame.sim_time_sfd, "ns")
+
+            if rx_frame.start_lane == 4:
+                # start in lane 4 reports 1 full cycle delay, so subtract half clock period
+                rx_frame_sfd_ns -= 3.2
+
+            tb.log.info("TX frame PTP TS: %f ns", ptp_ts_ns)
+            tb.log.info("RX frame SFD sim time: %f ns", rx_frame_sfd_ns)
+            tb.log.info("Difference: %f ns", abs(rx_frame_sfd_ns - ptp_ts_ns))
 
             assert rx_frame.get_payload() == test_data
             assert rx_frame.check_fcs()
             assert rx_frame.ctrl is None
+            assert abs(rx_frame_sfd_ns - ptp_ts_ns - tb.clk_period*5) < 0.01
 
             start_lane.append(rx_frame.start_lane)
 
@@ -256,6 +281,84 @@ async def run_test_tx_alignment(dut, payload_data=None, ifg=12):
         assert start_lane_ref == start_lane
 
         await RisingEdge(dut.tx_clk)
+
+    assert tb.serdes_sink.empty()
+
+    await RisingEdge(dut.tx_clk)
+    await RisingEdge(dut.tx_clk)
+
+
+async def run_test_tx_underrun(dut, ifg=12):
+
+    tb = TB(dut)
+
+    tb.serdes_source.ifg = ifg
+    tb.dut.cfg_ifg.value = ifg
+    tb.dut.cfg_tx_enable.value = 1
+
+    await tb.reset()
+
+    test_data = bytes(x for x in range(60))
+
+    for k in range(3):
+        test_frame = AxiStreamFrame(test_data)
+        await tb.axis_source.send(test_frame)
+
+    for k in range(64*16 // tb.axis_source.width):
+        await RisingEdge(dut.tx_clk)
+
+    tb.axis_source.pause = True
+
+    for k in range(4):
+        await RisingEdge(dut.tx_clk)
+
+    tb.axis_source.pause = False
+
+    for k in range(3):
+        rx_frame = await tb.serdes_sink.recv()
+
+        if k == 1:
+            assert rx_frame.data[-1] == 0xFE
+            assert rx_frame.ctrl[-1] == 1
+        else:
+            assert rx_frame.get_payload() == test_data
+            assert rx_frame.check_fcs()
+            assert rx_frame.ctrl is None
+
+    assert tb.serdes_sink.empty()
+
+    await RisingEdge(dut.tx_clk)
+    await RisingEdge(dut.tx_clk)
+
+
+async def run_test_tx_error(dut, ifg=12):
+
+    tb = TB(dut)
+
+    tb.serdes_source.ifg = ifg
+    tb.dut.cfg_ifg.value = ifg
+    tb.dut.cfg_tx_enable.value = 1
+
+    await tb.reset()
+
+    test_data = bytes(x for x in range(60))
+
+    for k in range(3):
+        test_frame = AxiStreamFrame(test_data)
+        if k == 1:
+            test_frame.tuser = 1
+        await tb.axis_source.send(test_frame)
+
+    for k in range(3):
+        rx_frame = await tb.serdes_sink.recv()
+
+        if k == 1:
+            assert rx_frame.data[-1] == 0xFE
+            assert rx_frame.ctrl[-1] == 1
+        else:
+            assert rx_frame.get_payload() == test_data
+            assert rx_frame.check_fcs()
+            assert rx_frame.ctrl is None
 
     assert tb.serdes_sink.empty()
 
@@ -328,6 +431,12 @@ if cocotb.SIM_NAME:
     factory.add_option("ifg", [12])
     factory.generate_tests()
 
+    for test in [run_test_tx_underrun, run_test_tx_error]:
+
+        factory = TestFactory(test)
+        factory.add_option("ifg", [12])
+        factory.generate_tests()
+
     factory = TestFactory(run_test_rx_frame_sync)
     factory.generate_tests()
 
@@ -369,16 +478,14 @@ def test_eth_mac_phy_10g(request, data_width, enable_dic):
     parameters['ENABLE_PADDING'] = 1
     parameters['ENABLE_DIC'] = enable_dic
     parameters['MIN_FRAME_LENGTH'] = 64
-    parameters['PTP_PERIOD_NS'] = 0x6 if parameters['DATA_WIDTH'] == 64 else 0x3
-    parameters['PTP_PERIOD_FNS'] = 0x6666 if parameters['DATA_WIDTH'] == 64 else 0x3333
-    parameters['TX_PTP_TS_ENABLE'] = 1
-    parameters['TX_PTP_TS_WIDTH'] = 96
-    parameters['TX_PTP_TAG_ENABLE'] = parameters['TX_PTP_TS_ENABLE']
+    parameters['PTP_TS_ENABLE'] = 1
+    parameters['PTP_TS_FMT_TOD'] = 1
+    parameters['PTP_TS_WIDTH'] = 96 if parameters['PTP_TS_FMT_TOD'] else 64
+    parameters['TX_PTP_TS_CTRL_IN_TUSER'] = parameters['PTP_TS_ENABLE']
+    parameters['TX_PTP_TAG_ENABLE'] = parameters['PTP_TS_ENABLE']
     parameters['TX_PTP_TAG_WIDTH'] = 16
-    parameters['RX_PTP_TS_ENABLE'] = 1
-    parameters['RX_PTP_TS_WIDTH'] = 96
-    parameters['TX_USER_WIDTH'] = (parameters['TX_PTP_TAG_WIDTH'] if parameters['TX_PTP_TS_ENABLE'] and parameters['TX_PTP_TAG_ENABLE'] else 0) + 1
-    parameters['RX_USER_WIDTH'] = (parameters['RX_PTP_TS_WIDTH'] if parameters['RX_PTP_TS_ENABLE'] else 0) + 1
+    parameters['TX_USER_WIDTH'] = ((parameters['TX_PTP_TAG_WIDTH'] if parameters['TX_PTP_TAG_ENABLE'] else 0) + (1 if parameters['TX_PTP_TS_CTRL_IN_TUSER'] else 0) if parameters['PTP_TS_ENABLE'] else 0) + 1
+    parameters['RX_USER_WIDTH'] = (parameters['PTP_TS_WIDTH'] if parameters['PTP_TS_ENABLE'] else 0) + 1
     parameters['BIT_REVERSE'] = 0
     parameters['SCRAMBLER_DISABLE'] = 0
     parameters['PRBS31_ENABLE'] = 1

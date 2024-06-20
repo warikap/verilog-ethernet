@@ -62,7 +62,9 @@ class TB:
         self.source = BaseRSerdesSource(dut.encoded_rx_data, dut.encoded_rx_hdr, dut.clk, scramble=False)
         self.sink = AxiStreamSink(AxiStreamBus.from_prefix(dut, "m_axis"), dut.clk, dut.rst)
 
-        self.ptp_clock = PtpClockSimTime(ts_64=dut.ptp_ts, clock=dut.clk)
+        self.ptp_clock = PtpClockSimTime(ts_tod=dut.ptp_ts, clock=dut.clk)
+
+        dut.cfg_rx_enable.setimmediatevalue(0)
 
     async def reset(self):
         self.dut.rst.setimmediatevalue(0)
@@ -81,6 +83,7 @@ async def run_test(dut, payload_lengths=None, payload_data=None, ifg=12):
     tb = TB(dut)
 
     tb.source.ifg = ifg
+    tb.dut.cfg_rx_enable.value = 1
 
     await tb.reset()
 
@@ -107,6 +110,7 @@ async def run_test(dut, payload_lengths=None, payload_data=None, ifg=12):
 
         tb.log.info("RX frame PTP TS: %f ns", ptp_ts_ns)
         tb.log.info("TX frame SFD sim time: %f ns", tx_frame_sfd_ns)
+        tb.log.info("Difference: %f ns", abs(ptp_ts_ns - tx_frame_sfd_ns))
 
         assert rx_frame.tdata == test_data
         assert frame_error == 0
@@ -163,7 +167,8 @@ def test_axis_baser_rx_64(request):
     parameters['KEEP_WIDTH'] = parameters['DATA_WIDTH'] // 8
     parameters['HDR_WIDTH'] = 2
     parameters['PTP_TS_ENABLE'] = 1
-    parameters['PTP_TS_WIDTH'] = 96
+    parameters['PTP_TS_FMT_TOD'] = 1
+    parameters['PTP_TS_WIDTH'] = 96 if parameters['PTP_TS_FMT_TOD'] else 64
     parameters['USER_WIDTH'] = (parameters['PTP_TS_WIDTH'] if parameters['PTP_TS_ENABLE'] else 0) + 1
 
     extra_env = {f'PARAM_{k}': str(v) for k, v in parameters.items()}

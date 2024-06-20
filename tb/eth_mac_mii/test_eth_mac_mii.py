@@ -34,7 +34,7 @@ from cocotb.triggers import RisingEdge
 from cocotb.regression import TestFactory
 
 from cocotbext.eth import GmiiFrame, MiiPhy
-from cocotbext.axi import AxiStreamBus, AxiStreamSource, AxiStreamSink
+from cocotbext.axi import AxiStreamBus, AxiStreamSource, AxiStreamSink, AxiStreamFrame
 
 
 class TB:
@@ -50,7 +50,9 @@ class TB:
         self.axis_source = AxiStreamSource(AxiStreamBus.from_prefix(dut, "tx_axis"), dut.tx_clk, dut.tx_rst)
         self.axis_sink = AxiStreamSink(AxiStreamBus.from_prefix(dut, "rx_axis"), dut.rx_clk, dut.rx_rst)
 
-        dut.ifg_delay.setimmediatevalue(0)
+        dut.cfg_ifg.setimmediatevalue(0)
+        dut.cfg_tx_enable.setimmediatevalue(0)
+        dut.cfg_rx_enable.setimmediatevalue(0)
 
     async def reset(self):
         self.dut.rst.setimmediatevalue(0)
@@ -69,7 +71,8 @@ async def run_test_rx(dut, payload_lengths=None, payload_data=None, ifg=12, spee
     tb = TB(dut, speed)
 
     tb.mii_phy.rx.ifg = ifg
-    tb.dut.ifg_delay.value = ifg
+    tb.dut.cfg_ifg.value = ifg
+    tb.dut.cfg_rx_enable.value = 1
 
     await tb.reset()
 
@@ -96,7 +99,8 @@ async def run_test_tx(dut, payload_lengths=None, payload_data=None, ifg=12, spee
     tb = TB(dut, speed)
 
     tb.mii_phy.rx.ifg = ifg
-    tb.dut.ifg_delay.value = ifg
+    tb.dut.cfg_ifg.value = ifg
+    tb.dut.cfg_tx_enable.value = 1
 
     await tb.reset()
 
@@ -111,6 +115,82 @@ async def run_test_tx(dut, payload_lengths=None, payload_data=None, ifg=12, spee
         assert rx_frame.get_payload() == test_data
         assert rx_frame.check_fcs()
         assert rx_frame.error is None
+
+    assert tb.mii_phy.tx.empty()
+
+    await RisingEdge(dut.tx_clk)
+    await RisingEdge(dut.tx_clk)
+
+
+async def run_test_tx_underrun(dut, ifg=12):
+
+    tb = TB(dut)
+
+    tb.mii_phy.rx.ifg = ifg
+    tb.dut.cfg_ifg.value = ifg
+    tb.dut.cfg_tx_enable.value = 1
+
+    await tb.reset()
+
+    test_data = bytes(x for x in range(60))
+
+    for k in range(3):
+        test_frame = AxiStreamFrame(test_data)
+        await tb.axis_source.send(test_frame)
+
+    for k in range(200):
+        await RisingEdge(dut.tx_clk)
+
+    tb.axis_source.pause = True
+
+    for k in range(10):
+        await RisingEdge(dut.tx_clk)
+
+    tb.axis_source.pause = False
+
+    for k in range(3):
+        rx_frame = await tb.mii_phy.tx.recv()
+
+        if k == 1:
+            assert rx_frame.error[-1] == 1
+        else:
+            assert rx_frame.get_payload() == test_data
+            assert rx_frame.check_fcs()
+            assert rx_frame.error is None
+
+    assert tb.mii_phy.tx.empty()
+
+    await RisingEdge(dut.tx_clk)
+    await RisingEdge(dut.tx_clk)
+
+
+async def run_test_tx_error(dut, ifg=12):
+
+    tb = TB(dut)
+
+    tb.mii_phy.rx.ifg = ifg
+    tb.dut.cfg_ifg.value = ifg
+    tb.dut.cfg_tx_enable.value = 1
+
+    await tb.reset()
+
+    test_data = bytes(x for x in range(60))
+
+    for k in range(3):
+        test_frame = AxiStreamFrame(test_data)
+        if k == 1:
+            test_frame.tuser = 1
+        await tb.axis_source.send(test_frame)
+
+    for k in range(3):
+        rx_frame = await tb.mii_phy.tx.recv()
+
+        if k == 1:
+            assert rx_frame.error[-1] == 1
+        else:
+            assert rx_frame.get_payload() == test_data
+            assert rx_frame.check_fcs()
+            assert rx_frame.error is None
 
     assert tb.mii_phy.tx.empty()
 
@@ -139,6 +219,12 @@ if cocotb.SIM_NAME:
         factory.add_option("payload_data", [incrementing_payload])
         factory.add_option("ifg", [12])
         factory.add_option("speed", [100e6, 10e6])
+        factory.generate_tests()
+
+    for test in [run_test_tx_underrun, run_test_tx_error]:
+
+        factory = TestFactory(test)
+        factory.add_option("ifg", [12])
         factory.generate_tests()
 
 

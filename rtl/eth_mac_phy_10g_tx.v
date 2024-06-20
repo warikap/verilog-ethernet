@@ -39,13 +39,13 @@ module eth_mac_phy_10g_tx #
     parameter ENABLE_PADDING = 1,
     parameter ENABLE_DIC = 1,
     parameter MIN_FRAME_LENGTH = 64,
-    parameter PTP_PERIOD_NS = 4'h6,
-    parameter PTP_PERIOD_FNS = 16'h6666,
     parameter PTP_TS_ENABLE = 0,
-    parameter PTP_TS_WIDTH = 96,
+    parameter PTP_TS_FMT_TOD = 1,
+    parameter PTP_TS_WIDTH = PTP_TS_FMT_TOD ? 96 : 64,
+    parameter PTP_TS_CTRL_IN_TUSER = 0,
     parameter PTP_TAG_ENABLE = PTP_TS_ENABLE,
     parameter PTP_TAG_WIDTH = 16,
-    parameter USER_WIDTH = (PTP_TAG_ENABLE ? PTP_TAG_WIDTH : 0) + 1,
+    parameter USER_WIDTH = (PTP_TS_ENABLE ? (PTP_TAG_ENABLE ? PTP_TAG_WIDTH : 0) + (PTP_TS_CTRL_IN_TUSER ? 1 : 0) : 0) + 1,
     parameter BIT_REVERSE = 0,
     parameter SCRAMBLER_DISABLE = 0,
     parameter PRBS31_ENABLE = 0,
@@ -88,8 +88,9 @@ module eth_mac_phy_10g_tx #
     /*
      * Configuration
      */
-    input  wire [7:0]                ifg_delay,
-    input  wire                      tx_prbs31_enable
+    input  wire [7:0]                cfg_ifg,
+    input  wire                      cfg_tx_enable,
+    input  wire                      cfg_tx_prbs31_enable
 );
 
 // bus width assertions
@@ -120,10 +121,10 @@ axis_baser_tx_64 #(
     .ENABLE_PADDING(ENABLE_PADDING),
     .ENABLE_DIC(ENABLE_DIC),
     .MIN_FRAME_LENGTH(MIN_FRAME_LENGTH),
-    .PTP_PERIOD_NS(PTP_PERIOD_NS),
-    .PTP_PERIOD_FNS(PTP_PERIOD_FNS),
     .PTP_TS_ENABLE(PTP_TS_ENABLE),
+    .PTP_TS_FMT_TOD(PTP_TS_FMT_TOD),
     .PTP_TS_WIDTH(PTP_TS_WIDTH),
+    .PTP_TS_CTRL_IN_TUSER(PTP_TS_CTRL_IN_TUSER),
     .PTP_TAG_ENABLE(PTP_TAG_ENABLE),
     .PTP_TAG_WIDTH(PTP_TAG_WIDTH),
     .USER_WIDTH(USER_WIDTH)
@@ -145,7 +146,8 @@ axis_baser_tx_inst (
     .m_axis_ptp_ts_valid(m_axis_ptp_ts_valid),
     .start_packet(tx_start_packet),
     .error_underflow(tx_error_underflow),
-    .ifg_delay(ifg_delay)
+    .cfg_ifg(cfg_ifg),
+    .cfg_tx_enable(cfg_tx_enable)
 );
 
 eth_phy_10g_tx_if #(
@@ -163,7 +165,7 @@ eth_phy_10g_tx_if_inst (
     .encoded_tx_hdr(encoded_tx_hdr),
     .serdes_tx_data(serdes_tx_data),
     .serdes_tx_hdr(serdes_tx_hdr),
-    .tx_prbs31_enable(tx_prbs31_enable)
+    .cfg_tx_prbs31_enable(cfg_tx_prbs31_enable)
 );
 
 endmodule
