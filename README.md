@@ -240,6 +240,32 @@ Supports priority and round-robin arbitration.
 
 GMII/MII PHY interface and clocking logic.
 
+### `icmp` module
+
+ICMP echo (ping) responder.  Answers ICMP Echo Request messages with an
+Echo Reply carrying the same identifier, sequence number, and payload;
+discards all other ICMP messages.
+
+### `icmp_64` module
+
+ICMP echo (ping) responder with 64 bit data width for 10G/25G Ethernet.
+
+### `icmp_ip_rx` module
+
+ICMP frame receiver.
+
+### `icmp_ip_rx_64` module
+
+ICMP frame receiver with 64 bit datapath for 10G/25G Ethernet.
+
+### `icmp_ip_tx` module
+
+ICMP frame transmitter.
+
+### `icmp_ip_tx_64` module
+
+ICMP frame transmitter with 64 bit datapath for 10G/25G Ethernet.
+
 ### `ip` module
 
 IPv4 block with 8 bit data width for gigabit Ethernet.  Manages IPv4 packet
@@ -266,6 +292,19 @@ Top level for gigabit IP stack.
 IPv4 module with ARP integration and 64 bit data width for 10G/25G Ethernet.
 
 Top level for 10G/25G IP stack.
+
+### `ip_complete_icmp` module
+
+Drop-in replacement for `ip_complete` with a built-in ICMP echo (ping)
+responder: a single `ip`/`arp` engine instead of wrapping `ip_complete`,
+useful as a building block when combining ICMP with another protocol
+(e.g. UDP) without duplicating the IP/ARP stack.
+
+### `ip_complete_icmp_64` module
+
+Drop-in replacement for `ip_complete_64` with a built-in ICMP echo (ping)
+responder and 64 bit data width for 10G/25G Ethernet, analogous to
+`ip_complete_icmp`.
 
 ### `ip_demux` module
 
@@ -377,6 +416,24 @@ Top level for 10G/25G UDP stack.
 
 UDP frame demultiplexer with parametrizable data width and port count.
 Supports priority and round-robin arbitration.
+
+### `udp_icmp_complete` module
+
+UDP module with IPv4 and ARP integration, built on `ip_complete_icmp`
+instead of `ip_complete` so it also answers ICMP Echo Request itself,
+sharing a single ip/arp engine between UDP and ICMP.
+
+Top level for a gigabit UDP stack that also needs ICMP echo support.
+
+### `udp_icmp_complete_64` module
+
+UDP module with IPv4 and ARP integration and 64 bit data width for
+10G/25G Ethernet, built on `ip_complete_icmp_64` instead of
+`ip_complete_64` so it also answers ICMP Echo Request itself, sharing a
+single ip/arp engine between UDP and ICMP, analogous to
+`udp_icmp_complete`.
+
+Top level for a 10G/25G UDP stack that also needs ICMP echo support.
 
 ### `udp_ip_rx` module
 
