@@ -236,6 +236,38 @@ Supports priority and round-robin arbitration.
 
 10G/25G Ethernet PCS/PMA PHY transmit-side logic.
 
+### `eth_tcp_icmp_complete` module
+
+Self-contained IPv4/ARP/TCP/ICMP stack with a single AXI stream
+input/output carrying whole Ethernet frames, instead of `tcp_icmp_complete`'s
+own split parallel-header-plus-payload Ethernet frame interface. Built by
+wrapping `eth_axis_rx`/`eth_axis_tx` around `tcp_icmp_complete`; every
+other port (raw IP bypass, TCP application interface, status,
+configuration) is unchanged.
+
+### `eth_tcp_icmp_complete_64` module
+
+64 bit datapath version of `eth_tcp_icmp_complete`, built around
+`tcp_icmp_complete_64` instead of `tcp_icmp_complete`.  The raw Ethernet
+frame AXI stream carries a `tkeep` signal, same as the rest of this
+repo's 64 bit modules.
+
+### `eth_udp_icmp_complete` module
+
+Self-contained IPv4/ARP/UDP/ICMP stack with a single AXI stream
+input/output carrying whole Ethernet frames, instead of `udp_icmp_complete`'s
+own split parallel-header-plus-payload Ethernet frame interface. Built by
+wrapping `eth_axis_rx`/`eth_axis_tx` around `udp_icmp_complete`; every
+other port (raw IP bypass, UDP application interface, status,
+configuration) is unchanged.
+
+### `eth_udp_icmp_complete_64` module
+
+64 bit datapath version of `eth_udp_icmp_complete`, built around
+`udp_icmp_complete_64` instead of `udp_icmp_complete`.  The raw Ethernet
+frame AXI stream carries a `tkeep` signal, same as the rest of this
+repo's 64 bit modules.
+
 ### `gmii_phy_if` module
 
 GMII/MII PHY interface and clocking logic.
@@ -373,6 +405,62 @@ start time, period, and width, based on PTP time from a PTP clock.
 ### `rgmii_phy_if` module
 
 RGMII PHY interface and clocking logic.
+
+### `tcp` module
+
+TCP block with 8 bit data width for gigabit Ethernet. Provides basic TCP
+segment framing and mandatory checksum generation only; does not implement
+connection state, retransmission, windowing, or options.
+
+### `tcp_64` module
+
+TCP block with 64 bit data width for 10G/25G Ethernet, analogous to `tcp`.
+
+### `tcp_checksum_gen` module
+
+TCP checksum generator module. Calculates the TCP segment length (for
+downstream IP total-length framing) and the mandatory TCP checksum over
+the IP pseudo header, the TCP header, and the payload.
+
+### `tcp_checksum_gen_64` module
+
+TCP checksum generator module with 64 bit data width for 10G/25G Ethernet,
+analogous to `tcp_checksum_gen`.
+
+### `tcp_icmp_complete` module
+
+TCP module with IPv4 and ARP integration, built on `ip_complete_icmp`
+instead of `ip_complete` so it also answers ICMP Echo Request itself,
+sharing a single ip/arp engine between TCP and ICMP, analogous to
+`udp_icmp_complete`.
+
+Top level for a gigabit TCP stack that also needs ICMP echo support.
+
+### `tcp_icmp_complete_64` module
+
+TCP module with IPv4 and ARP integration and 64 bit data width for
+10G/25G Ethernet, built on `ip_complete_icmp_64` instead of
+`ip_complete_64` so it also answers ICMP Echo Request itself, sharing a
+single ip/arp engine between TCP and ICMP, analogous to
+`tcp_icmp_complete`.
+
+Top level for a 10G/25G TCP stack that also needs ICMP echo support.
+
+### `tcp_ip_rx` module
+
+TCP frame receiver.
+
+### `tcp_ip_rx_64` module
+
+TCP frame receiver with 64 bit datapath for 10G/25G Ethernet.
+
+### `tcp_ip_tx` module
+
+TCP frame transmitter.
+
+### `tcp_ip_tx_64` module
+
+TCP frame transmitter with 64 bit datapath for 10G/25G Ethernet.
 
 ### `udp` module
 
