@@ -405,7 +405,9 @@ always @* begin
                         m_ip_payload_axis_tdata_int[55:48] = tcp_window_reg[15: 8];
                         m_ip_payload_axis_tdata_int[63:56] = tcp_window_reg[ 7: 0];
                         m_ip_payload_axis_tkeep_int = 8'hff;
-                        s_tcp_payload_axis_tready_next = m_ip_payload_axis_tready_int_early;
+                        if (tcp_length_reg != 16'd20) begin
+                            s_tcp_payload_axis_tready_next = m_ip_payload_axis_tready_int_early;
+                        end
                         state_next = STATE_WRITE_HEADER_LAST;
                     end
                 endcase
@@ -414,52 +416,72 @@ always @* begin
             end
         end
         STATE_WRITE_HEADER_LAST: begin
-            // last header word requires first payload word; process accordingly
-            s_tcp_payload_axis_tready_next = m_ip_payload_axis_tready_int_early && shift_tcp_payload_s_tready;
-
-            if (s_tcp_payload_axis_tready && s_tcp_payload_axis_tvalid) begin
-                m_ip_payload_axis_tvalid_int = 1'b1;
-                transfer_in_save = 1'b1;
-
-                m_ip_payload_axis_tdata_int[ 7: 0] = tcp_checksum_reg[15: 8];
-                m_ip_payload_axis_tdata_int[15: 8] = tcp_checksum_reg[ 7: 0];
-                m_ip_payload_axis_tdata_int[23:16] = tcp_urgent_pointer_reg[15: 8];
-                m_ip_payload_axis_tdata_int[31:24] = tcp_urgent_pointer_reg[ 7: 0];
-                m_ip_payload_axis_tdata_int[39:32] = shift_tcp_payload_axis_tdata[39:32];
-                m_ip_payload_axis_tdata_int[47:40] = shift_tcp_payload_axis_tdata[47:40];
-                m_ip_payload_axis_tdata_int[55:48] = shift_tcp_payload_axis_tdata[55:48];
-                m_ip_payload_axis_tdata_int[63:56] = shift_tcp_payload_axis_tdata[63:56];
-                m_ip_payload_axis_tkeep_int = {shift_tcp_payload_axis_tkeep[7:4], 4'hF};
-                m_ip_payload_axis_tlast_int = shift_tcp_payload_axis_tlast;
-                m_ip_payload_axis_tuser_int = shift_tcp_payload_axis_tuser;
-                word_count_next = word_count_reg - 16'd8;
-
-                if (keep2count(m_ip_payload_axis_tkeep_int) >= word_count_reg) begin
-                    // have entire payload
-                    m_ip_payload_axis_tkeep_int = count2keep(word_count_reg);
-                    if (shift_tcp_payload_axis_tlast) begin
-                        s_tcp_hdr_ready_next = !m_ip_hdr_valid_next;
-                        s_tcp_payload_axis_tready_next = 1'b0;
-                        state_next = STATE_IDLE;
-                    end else begin
-                        store_last_word = 1'b1;
-                        s_tcp_payload_axis_tready_next = shift_tcp_payload_s_tready;
-                        m_ip_payload_axis_tvalid_int = 1'b0;
-                        state_next = STATE_WRITE_PAYLOAD_LAST;
-                    end
+            if (tcp_length_reg == 16'd20) begin
+                // zero-payload segment (e.g. SYN/ACK/FIN/RST) - the last
+                // header word carries only the remaining 4 header bytes
+                // (checksum + urgent pointer); no payload phase is entered
+                // and no payload beat is ever consumed
+                if (m_ip_payload_axis_tready_int_reg) begin
+                    m_ip_payload_axis_tvalid_int = 1'b1;
+                    m_ip_payload_axis_tdata_int[ 7: 0] = tcp_checksum_reg[15: 8];
+                    m_ip_payload_axis_tdata_int[15: 8] = tcp_checksum_reg[ 7: 0];
+                    m_ip_payload_axis_tdata_int[23:16] = tcp_urgent_pointer_reg[15: 8];
+                    m_ip_payload_axis_tdata_int[31:24] = tcp_urgent_pointer_reg[ 7: 0];
+                    m_ip_payload_axis_tkeep_int = 8'h0f;
+                    m_ip_payload_axis_tlast_int = 1'b1;
+                    s_tcp_hdr_ready_next = !m_ip_hdr_valid_next;
+                    state_next = STATE_IDLE;
                 end else begin
-                    if (shift_tcp_payload_axis_tlast) begin
-                        // end of frame, but length does not match
-                        error_payload_early_termination_next = 1'b1;
-                        s_tcp_payload_axis_tready_next = shift_tcp_payload_s_tready;
-                        m_ip_payload_axis_tuser_int = 1'b1;
-                        state_next = STATE_WAIT_LAST;
-                    end else begin
-                        state_next = STATE_WRITE_PAYLOAD;
-                    end
+                    state_next = STATE_WRITE_HEADER_LAST;
                 end
             end else begin
-                state_next = STATE_WRITE_HEADER_LAST;
+                // last header word requires first payload word; process accordingly
+                s_tcp_payload_axis_tready_next = m_ip_payload_axis_tready_int_early && shift_tcp_payload_s_tready;
+
+                if (s_tcp_payload_axis_tready && s_tcp_payload_axis_tvalid) begin
+                    m_ip_payload_axis_tvalid_int = 1'b1;
+                    transfer_in_save = 1'b1;
+
+                    m_ip_payload_axis_tdata_int[ 7: 0] = tcp_checksum_reg[15: 8];
+                    m_ip_payload_axis_tdata_int[15: 8] = tcp_checksum_reg[ 7: 0];
+                    m_ip_payload_axis_tdata_int[23:16] = tcp_urgent_pointer_reg[15: 8];
+                    m_ip_payload_axis_tdata_int[31:24] = tcp_urgent_pointer_reg[ 7: 0];
+                    m_ip_payload_axis_tdata_int[39:32] = shift_tcp_payload_axis_tdata[39:32];
+                    m_ip_payload_axis_tdata_int[47:40] = shift_tcp_payload_axis_tdata[47:40];
+                    m_ip_payload_axis_tdata_int[55:48] = shift_tcp_payload_axis_tdata[55:48];
+                    m_ip_payload_axis_tdata_int[63:56] = shift_tcp_payload_axis_tdata[63:56];
+                    m_ip_payload_axis_tkeep_int = {shift_tcp_payload_axis_tkeep[7:4], 4'hF};
+                    m_ip_payload_axis_tlast_int = shift_tcp_payload_axis_tlast;
+                    m_ip_payload_axis_tuser_int = shift_tcp_payload_axis_tuser;
+                    word_count_next = word_count_reg - 16'd8;
+
+                    if (keep2count(m_ip_payload_axis_tkeep_int) >= word_count_reg) begin
+                        // have entire payload
+                        m_ip_payload_axis_tkeep_int = count2keep(word_count_reg);
+                        if (shift_tcp_payload_axis_tlast) begin
+                            s_tcp_hdr_ready_next = !m_ip_hdr_valid_next;
+                            s_tcp_payload_axis_tready_next = 1'b0;
+                            state_next = STATE_IDLE;
+                        end else begin
+                            store_last_word = 1'b1;
+                            s_tcp_payload_axis_tready_next = shift_tcp_payload_s_tready;
+                            m_ip_payload_axis_tvalid_int = 1'b0;
+                            state_next = STATE_WRITE_PAYLOAD_LAST;
+                        end
+                    end else begin
+                        if (shift_tcp_payload_axis_tlast) begin
+                            // end of frame, but length does not match
+                            error_payload_early_termination_next = 1'b1;
+                            s_tcp_payload_axis_tready_next = shift_tcp_payload_s_tready;
+                            m_ip_payload_axis_tuser_int = 1'b1;
+                            state_next = STATE_WAIT_LAST;
+                        end else begin
+                            state_next = STATE_WRITE_PAYLOAD;
+                        end
+                    end
+                end else begin
+                    state_next = STATE_WRITE_HEADER_LAST;
+                end
             end
         end
         STATE_WRITE_PAYLOAD: begin

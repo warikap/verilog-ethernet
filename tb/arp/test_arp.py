@@ -320,7 +320,7 @@ def cycle_pause():
     return itertools.cycle([1, 1, 1, 0])
 
 
-if cocotb.SIM_NAME:
+if getattr(cocotb, "SIM_NAME", None):
 
     factory = TestFactory(run_test)
     factory.add_option("idle_inserter", [None, cycle_pause])

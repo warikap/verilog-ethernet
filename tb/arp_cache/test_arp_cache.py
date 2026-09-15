@@ -209,7 +209,7 @@ async def run_test(dut):
     await RisingEdge(dut.clk)
 
 
-if cocotb.SIM_NAME:
+if getattr(cocotb, "SIM_NAME", None):
 
     factory = TestFactory(run_test)
     factory.generate_tests()

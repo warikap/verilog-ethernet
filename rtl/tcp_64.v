@@ -331,6 +331,7 @@ if (CHECKSUM_GEN_ENABLE) begin
         .s_tcp_flags(s_tcp_flags),
         .s_tcp_window(s_tcp_window),
         .s_tcp_urgent_pointer(s_tcp_urgent_pointer),
+        .s_tcp_length(s_tcp_length),
         .s_tcp_payload_axis_tdata(s_tcp_payload_axis_tdata),
         .s_tcp_payload_axis_tkeep(s_tcp_payload_axis_tkeep),
         .s_tcp_payload_axis_tvalid(s_tcp_payload_axis_tvalid),

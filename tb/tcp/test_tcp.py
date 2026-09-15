@@ -291,6 +291,38 @@ async def run_test(dut):
             assert rx_header.ip_length.integer == explicit_length + 20
             assert bytes(rx_pkt[TCP].payload) == bytes(test_pkt[TCP].payload)
 
+    # zero-payload TCP segment (e.g. SYN/ACK/FIN/RST) - regression test for
+    # the tcp_ip_tx.v/tcp_checksum_gen.v fix that lets a genuinely
+    # zero-byte-payload segment be sent at all (previously the TX state
+    # machine always fell through to a payload phase that would only
+    # complete on a tlast beat, which a zero-byte payload never provides)
+    test_pkt = build_test_packet(b'')
+
+    if checksum_gen_enable:
+        # real length (20, header only) must be correct here - unlike the
+        # nonzero-payload case above, tcp_length now also gates whether the
+        # zero-payload fast path is taken, it is not purely ignored/recomputed
+        await tb.send_tcp(test_pkt, tcp_checksum=0)
+
+        rx_header, rx_pkt = await tb.recv_ip()
+
+        expected = build_test_packet(b'')
+
+        assert bytes(rx_pkt) == bytes(expected[IP])
+    else:
+        explicit_checksum = 0xbeef
+        explicit_length = len(bytes(test_pkt[TCP]))
+
+        assert explicit_length == 20
+
+        await tb.send_tcp(test_pkt, tcp_checksum=explicit_checksum, tcp_length=explicit_length)
+
+        rx_header, rx_pkt = await tb.recv_ip()
+
+        assert rx_pkt[TCP].chksum == explicit_checksum
+        assert rx_header.ip_length.integer == explicit_length + 20
+        assert bytes(rx_pkt[TCP].payload) == b''
+
     assert tb.tcp_header_sink.empty()
     assert tb.tcp_payload_sink.empty()
     assert tb.ip_header_sink.empty()

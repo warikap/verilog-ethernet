@@ -68,6 +68,13 @@ module tcp_checksum_gen_64 #
     input  wire [8:0]  s_tcp_flags,
     input  wire [15:0] s_tcp_window,
     input  wire [15:0] s_tcp_urgent_pointer,
+    // TCP has no length field of its own; s_tcp_length carries the TCP
+    // header (20 octets, no options) plus payload byte count so this
+    // module can tell a genuinely zero-payload segment (SYN/ACK/FIN/RST)
+    // apart from "no payload beat has arrived yet" - mirrors
+    // tcp_checksum_gen.v's s_tcp_length. The real m_tcp_length output is
+    // still independently recomputed from the observed payload stream.
+    input  wire [15:0] s_tcp_length,
     input  wire [63:0] s_tcp_payload_axis_tdata,
     input  wire [7:0]  s_tcp_payload_axis_tkeep,
     input  wire        s_tcp_payload_axis_tvalid,
@@ -224,6 +231,7 @@ reg [2:0]  tcp_reserved_reg = 3'd0;
 reg [8:0]  tcp_flags_reg = 9'd0;
 reg [15:0] tcp_window_reg = 16'd0;
 reg [15:0] tcp_urgent_pointer_reg = 16'd0;
+reg [15:0] tcp_length_reg = 16'd0;
 
 reg hdr_valid_reg = 0, hdr_valid_next;
 
@@ -592,7 +600,13 @@ always @* begin
             // sum header: urgent pointer (checksum field itself is zero, not summed)
             checksum_next = checksum_reg + tcp_urgent_pointer_reg;
             frame_ptr_next = 20;
-            state_next = STATE_SUM_PAYLOAD;
+            if (tcp_length_reg == 16'd20) begin
+                // zero-payload segment (e.g. SYN/ACK/FIN/RST) - no payload
+                // beats will ever arrive, finish the checksum now
+                state_next = STATE_FINISH_SUM;
+            end else begin
+                state_next = STATE_SUM_PAYLOAD;
+            end
         end
         STATE_SUM_PAYLOAD: begin
             // sum payload
@@ -690,6 +704,7 @@ always @(posedge clk) begin
         tcp_flags_reg <= s_tcp_flags;
         tcp_window_reg <= s_tcp_window;
         tcp_urgent_pointer_reg <= s_tcp_urgent_pointer;
+        tcp_length_reg <= s_tcp_length;
     end
 end
 

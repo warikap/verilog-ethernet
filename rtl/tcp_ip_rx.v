@@ -393,11 +393,23 @@ always @* begin
                 endcase
 
                 if (s_ip_payload_axis_tlast) begin
-                    error_header_early_termination_next = 1'b1;
-                    m_tcp_hdr_valid_next = 1'b0;
-                    s_ip_hdr_ready_next = !m_tcp_hdr_valid_next;
-                    s_ip_payload_axis_tready_next = 1'b0;
-                    state_next = STATE_IDLE;
+                    if (hdr_ptr_reg == HDR_PTR_URGENT_POINTER_0) begin
+                        // tlast lands exactly on the last header byte - a
+                        // well-formed zero-payload segment (e.g. a bare
+                        // ACK/SYN/FIN/RST), not a truncated header; the
+                        // hdr_valid/STATE_READ_PAYLOAD transition set above
+                        // already applies, just skip straight back to IDLE
+                        // instead of waiting for a payload that never comes
+                        s_ip_hdr_ready_next = !m_tcp_hdr_valid_next;
+                        s_ip_payload_axis_tready_next = 1'b0;
+                        state_next = STATE_IDLE;
+                    end else begin
+                        error_header_early_termination_next = 1'b1;
+                        m_tcp_hdr_valid_next = 1'b0;
+                        s_ip_hdr_ready_next = !m_tcp_hdr_valid_next;
+                        s_ip_payload_axis_tready_next = 1'b0;
+                        state_next = STATE_IDLE;
+                    end
                 end
 
             end else begin

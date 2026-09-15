@@ -378,7 +378,7 @@ async def run_test_pfc(dut):
     await RisingEdge(dut.clk)
 
 
-if cocotb.SIM_NAME:
+if getattr(cocotb, "SIM_NAME", None):
 
     for test in [run_test_lfc, run_test_pfc]:
 

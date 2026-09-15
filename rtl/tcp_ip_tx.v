@@ -337,8 +337,16 @@ always @* begin
                     HDR_PTR_URGENT_POINTER_1: m_ip_payload_axis_tdata_int = tcp_urgent_pointer_reg[15: 8];
                     HDR_PTR_URGENT_POINTER_0: begin
                         m_ip_payload_axis_tdata_int = tcp_urgent_pointer_reg[ 7: 0];
-                        s_tcp_payload_axis_tready_next = m_ip_payload_axis_tready_int_early;
-                        state_next = STATE_WRITE_PAYLOAD;
+                        if (tcp_length_reg == 16'd20) begin
+                            // zero-payload segment (e.g. SYN/ACK/FIN/RST) -
+                            // no payload phase, end the IP frame here
+                            m_ip_payload_axis_tlast_int = 1'b1;
+                            s_tcp_hdr_ready_next = !m_ip_hdr_valid_next;
+                            state_next = STATE_IDLE;
+                        end else begin
+                            s_tcp_payload_axis_tready_next = m_ip_payload_axis_tready_int_early;
+                            state_next = STATE_WRITE_PAYLOAD;
+                        end
                     end
                 endcase
             end else begin
